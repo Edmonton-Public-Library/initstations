@@ -32,7 +32,7 @@ USER=sirsi
 REMOTE=~/Unicorn/EPLwork/anisbet/
 LOCAL=~/projects/initstation/
 APP=initstation.sh
-ARGS=
+ARGS=CMA02 EPLPMR01 EPLPMR02
 
 test:
 	scp ${LOCAL}${APP} ${USER}@${TEST_SERVER}:${REMOTE}

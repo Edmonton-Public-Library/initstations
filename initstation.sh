@@ -1,12 +1,8 @@
 #!/bin/bash
-####################################################
+##########################################################################
 #
-# Bash shell script for project initstation 
-# Purpose:
-# Method:
-#
-#<one line to give the program's name and a brief idea of what it does.>
-#    Copyright (C) 2013  Andrew Nisbet
+# Fix error: too many login attempts, by removing station locks.
+#    Copyright (C) 2014  Andrew Nisbet
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,19 +19,86 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
 # MA 02110-1301, USA.
 #
-# Author:  Andrew Nisbet, Edmonton Public Library
-# Copyright (c) Wed Oct 22 10:06:19 MDT 2014
-# Rev: 
-#          0.0 - Dev. 
+# Name:       initstation.sh
+# Purpose:    This script will find and remove the lock file for a staff machine. It is meant
+#             to be used when they get a 'too many tries' while trying to log into a station
+#             with WF.
+# Method:     The algorithm comes from the Sirsi-Dynix support site; solution 33525. Manually:
+#             We receive a communication failure error or are unable to connect to WorkFlows using a named workstation.
+#             We can log in using a floating workstation, e.g., PCGUI-DISP.
 #
-####################################################
+#             SOLUTION DETAILS:
+#
+#             For a UNIX server:
+#
+#             1. Log onto the server as the sirsi user and identify the locked workstation.
+#             a. cd `gpn config`
+#             b. grep ^STAT admin
+#             c. identify the problem named station and note the key of that station in the second piped field of the line, e.g.,
+#
+#             STAT|36|MAINCIRC|wsgui|PC Graphical User Interface|1|1|2|2|1||0|2|0|
+#
+#             2. Go to the cd Unicorn/Locks/Stations directory.
+#             3. Remove the lock file for the station (it will be the key you obtained from the admin file), e.g.,
+#             rm 36
+#
+#             3. Log onto the unicornadmin utility by typing either "gosirsi" or "sirsi `gpn config`/environ vt100",
+#              and then entering the PIN for the sirsi user at the prompt.
+#             3. Select Unicornadmin from the main menu.
+#             4. Select Initialize, then Stations, then Symphony stations.
+#             5. Find the workstation policy in the list, e.g., MAINCIRC, and initialize it.
+#
+#             Users should now be able to use the named workstation.
+# Author:     Andrew Nisbet
+# Date:       December 30, 2013
+#
+############################################################################################
 
-# Environment setup required by cron to run script because its daemon runs
-# without assuming any environment settings and we need to use sirsi's.
-###############################################
-# *** Edit these to suit your environment *** #
-source /s/sirsi/Unicorn/EPLwork/cronjobscripts/setscriptenvironment.sh
-###############################################
-VERSION=0
+CONFIG=`getpathname config`
+LOCKS=~/Unicorn/Locks/Stations
+VERSION=0.2
 
+# Make sure the user enters at least a partial station name.
+if [ $# -lt 1 ]
+then
+        echo "$0 version $VERSION"
+        echo "usage: $0 <station_01 station_02 ... station_nn>"
+        exit 1
+fi
+
+for stationName in "$@"
+do
+	if [[ ! -s $CONFIG/admin ]]
+	then
+		echo "Can't find the configuration file in '$CONFIG/admin'"
+		exit 1
+	else
+		# Find the station number from the admin file.
+		STATION=`grep $stationName $CONFIG/admin | cut -d\| -f2`
+		if [[ ! $STATION ]]
+		then
+			echo "Can't find '$stationName' in '$CONFIG/admin'."
+			continue
+		fi
+		# Check for the lock in the lock directory.
+		if [[ -e $LOCKS/$STATION ]]
+		then
+			echo -n "do you want to remove the station's lock? y/n[n]: "
+			read answer
+			if [ $answer = "y" ] || [ $answer = "Y" ]
+			then
+				if rm $LOCKS/$STATION 2>/dev/null
+				then
+					echo "lock removed from station $STATION"
+				else
+					echo "no lock on station, nothing to do."
+				fi
+			else
+				echo "the station number is $STATION, but I am not going to remove the lock."
+			fi
+		else
+			echo "No such station lock file found for '$STATION'."
+		fi
+	fi
+done
 # EOF
