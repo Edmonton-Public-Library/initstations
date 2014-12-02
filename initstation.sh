@@ -39,14 +39,16 @@
 #             STAT|36|MAINCIRC|wsgui|PC Graphical User Interface|1|1|2|2|1||0|2|0|
 #
 #             2. Go to the cd Unicorn/Locks/Stations directory.
-#             3. Remove the lock file for the station (it will be the key you obtained from the admin file), e.g.,
+#             3. In the Unicorn/Locks directory you will find a file called '.MAINCIRC.36'.
+#             4. Kill the process that matches the PID found in the file in step 3, it is an mserver listener.
+#             5. Remove the lock file for the station (it will be the key you obtained from the admin file), e.g.,
 #             rm 36
-#
-#             3. Log onto the unicornadmin utility by typing either "gosirsi" or "sirsi `gpn config`/environ vt100",
+# This is equivalent to:
+#             1. Log onto the unicornadmin utility by typing either "gosirsi" or "sirsi `gpn config`/environ vt100",
 #              and then entering the PIN for the sirsi user at the prompt.
-#             3. Select Unicornadmin from the main menu.
-#             4. Select Initialize, then Stations, then Symphony stations.
-#             5. Find the workstation policy in the list, e.g., MAINCIRC, and initialize it.
+#             2. Select Unicornadmin from the main menu.
+#             3. Select Initialize, then Stations, then Symphony stations.
+#             4. Find the workstation policy in the list, e.g., MAINCIRC, and initialize it.
 #
 #             Users should now be able to use the named workstation.
 # Author:     Andrew Nisbet
@@ -56,13 +58,14 @@
 
 CONFIG=`getpathname config`
 LOCKS=~/Unicorn/Locks/Stations
-VERSION=0.2
+VERSION=0.3
 
 # Make sure the user enters at least a partial station name.
 if [ $# -lt 1 ]
 then
         echo "$0 version $VERSION"
         echo "usage: $0 <station_01 station_02 ... station_nn>"
+		ls -a $LOCKS | egrep -e '^\.[A-Z]' # List all the stations logged in.
         exit 1
 fi
 
@@ -87,9 +90,18 @@ do
 			read answer
 			if [ $answer = "y" ] || [ $answer = "Y" ]
 			then
+				PID_FILE=`ls -a $LOCKS/ | grep $STATION`
+				PID=`cat $LOCKS/$PID_FILE`
+				echo "$STATION has process ID of $PID"
 				if rm $LOCKS/$STATION 2>/dev/null
 				then
 					echo "lock removed from station $STATION"
+					if [ $PID ] # && [ kill -9 $PID ] # Commented for testing.
+					then
+						echo "$PID killed. (Pretending for testing)"
+					else
+						echo "$PID no such process ID."
+					fi
 				else
 					echo "no lock on station, nothing to do."
 				fi
