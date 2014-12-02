@@ -58,7 +58,7 @@
 
 CONFIG=`getpathname config`
 LOCKS=~/Unicorn/Locks/Stations
-VERSION=0.4
+VERSION=0.5
 
 # Make sure the user enters at least a partial station name.
 if [ $# -lt 1 ]
@@ -92,16 +92,29 @@ do
 			then
 				PID_FILE=`ls -a ~/Unicorn/Locks/ | grep $STATION`
 				PID=`cat ~/Unicorn/Locks/$PID_FILE`
-				echo "$STATION has process ID of $PID"
+				if [ $PID ]
+				then
+					echo "$STATION has process ID of $PID"
+					# if  kill -9 $PID  # Commented for testing.
+					# then
+						# echo "$PID killed."
+					# else
+						# echo "$PID no such process ID."
+					# fi
+				else
+					echo "failed to find PID of $STATION."
+				fi
+				# remove the lock file in Locks/
+				if rm ~/Unicorn/Locks/$PID_FILE 2>/dev/null
+				then
+					echo "lock removed ~/Unicorn/Locks/$PID_FILE"
+				else
+					echo "no lock on station, nothing to do."
+				fi
 				if rm $LOCKS/$STATION 2>/dev/null
 				then
 					echo "lock removed from station $STATION"
-					if  kill -9 $PID  # Commented for testing.
-					then
-						echo "$PID killed."
-					else
-						echo "$PID no such process ID."
-					fi
+					
 				else
 					echo "no lock on station, nothing to do."
 				fi
