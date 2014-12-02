@@ -29,10 +29,10 @@
 PRODUCTION_SERVER=eplapp.library.ualberta.ca
 TEST_SERVER=edpl-t.library.ualberta.ca
 USER=sirsi
-REMOTE=~/Unicorn/EPLwork/anisbet/
+REMOTE=~/Unicorn/Bincustom/
 LOCAL=~/projects/initstation/
 APP=initstation.sh
-ARGS=CMA02 EPLPMR01 EPLPMR02
+ARGS=
 
 test:
 	scp ${LOCAL}${APP} ${USER}@${TEST_SERVER}:${REMOTE}
