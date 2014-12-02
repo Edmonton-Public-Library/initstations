@@ -65,7 +65,7 @@ if [ $# -lt 1 ]
 then
         echo "$0 version $VERSION"
         echo "usage: $0 <station_01 station_02 ... station_nn>"
-		ls -a $LOCKS | egrep -e '^\.[A-Z]' # List all the stations logged in.
+        ls -a ~/Unicorn/Locks/ | egrep -e '^\.[A-Z]' # List all the stations logged in.
         exit 1
 fi
 
