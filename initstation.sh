@@ -92,6 +92,7 @@ do
 			then
 				PID_FILE=`ls -a ~/Unicorn/Locks/ | grep $STATION`
 				PID=`cat ~/Unicorn/Locks/$PID_FILE`
+				echo "$PID_FILE"
 				if [ $PID ]
 				then
 					echo "$STATION has process ID of $PID"
