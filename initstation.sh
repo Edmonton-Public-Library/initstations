@@ -194,6 +194,7 @@ init_station()
 			fi
 		fi
 		# Clean up.
+		rm -f $mserver_file 2>/dev/null
 		rm -f $STATION_LOCKS_DIR/$station_pid 2>/dev/null
 		logit "clean up complete."
 	else
@@ -244,6 +245,7 @@ do
 		;;
 	-r|--remove_all_locks)
 		[ "$DEBUG" == true ] && logit "request to remove all un-used locks."
+		# Ignore files that have names longer than 4 characters. They may be someone else's.
 		STATION_LOCK_FILES=( $(ls -C1 --ignore='?????*' $STATION_LOCKS_DIR) )
 		logit "there are ${#STATION_LOCK_FILES[@]} station locks"
 		;;
