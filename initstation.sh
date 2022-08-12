@@ -59,9 +59,10 @@
 
 CONFIG_DIR=`getpathname config`
 ADMIN_FILE=$CONFIG_DIR/admin
-STATION_LOCKS_DIR=~/Unicorn/Locks/Stations
+LOCKS_DIR=~/Unicorn/Locks
+STATION_LOCKS_DIR=$LOCKS_DIR/Stations
 WORKING_DIR=/software/EDPL/Unicorn/EPLwork/Initstations
-VERSION="1.00.05"
+VERSION="1.00.06"
 APP=$(basename -s .sh $0)
 DEBUG=false
 LOG=$WORKING_DIR/$APP.log
@@ -171,22 +172,23 @@ init_station()
 	# Check for the lock in the lock directory.
 	if [[ -e "$STATION_LOCKS_DIR/$station_id_file" ]]; then
 		# Find the process id (2207) from a matching file in ~/Unicorn/Locks directory, like .CMATMP.2207
-		local mserver_file=$(ls -a -C1 ~/Unicorn/Locks | grep $station_id_file 2>/dev/null)
+		local mserver_file=$(ls -a -C1 $LOCKS_DIR | grep $station_id_file 2>/dev/null)
 		[ -z "$mserver_file" ] && { logit "couldn't find the process id file for $station_name"; return; }
-		mserver_file=~/Unicorn/Locks/$mserver_file
+		local which_user=$(echo $mserver_file | pipe.pl -W'\.' -oc1)
+		mserver_file=$LOCKS_DIR/$mserver_file
 		# The process ID can be found in that file.
 		local process_id=$(cat $mserver_file)
 		[ -z "$process_id" ] && { logit "couldn't find the process id in $mserver_file"; return; }
 		local running_process=$(ps aux | pipe.pl -W'\s+' -oc1 | grep "$process_id" 2>/dev/null)
 		if [ -z "$running_process" ]; then
-			logit "the ${station_name}'s mserver is not running."
+			logit "$which_user on ${station_name}'s mserver is not running."
 			# on to clean up.
 		else
-			logit "the ${station_name}'s mserver session is still running!"
+			logit "$which_user on ${station_name}'s mserver session is still running!"
 			local answer=$(confirm "kill the process ")
 			if [ "$answer" == "$TRUE" ]; then
 				logit "killing process $running_process"
-				kill -9 "$running_process"
+				kill "$running_process"
 			else
 				logit "not touching $running_process"
 				# and exit before anthing else gets done.
@@ -196,7 +198,6 @@ init_station()
 		# Clean up.
 		rm -f $mserver_file 2>/dev/null
 		rm -f $STATION_LOCKS_DIR/$station_pid 2>/dev/null
-		logit "clean up complete."
 	else
 		logit "No lock file found for '$station_name'"
 	fi
@@ -298,3 +299,4 @@ for station_id in ${STATION_LOCK_FILES[@]}
 do
 	init_station $station_id
 done
+rm $LOCKS_DIR/Users/*
