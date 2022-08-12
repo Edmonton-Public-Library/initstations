@@ -62,7 +62,7 @@ ADMIN_FILE=$CONFIG_DIR/admin
 LOCKS_DIR=~/Unicorn/Locks
 STATION_LOCKS_DIR=$LOCKS_DIR/Stations
 WORKING_DIR=/software/EDPL/Unicorn/EPLwork/Initstations
-VERSION="1.00.06"
+VERSION="1.01.00"
 APP=$(basename -s .sh $0)
 DEBUG=false
 LOG=$WORKING_DIR/$APP.log
@@ -247,8 +247,11 @@ do
 	-r|--remove_all_locks)
 		[ "$DEBUG" == true ] && logit "request to remove all un-used locks."
 		# Ignore files that have names longer than 4 characters. They may be someone else's.
-		STATION_LOCK_FILES=( $(ls -C1 --ignore='?????*' $STATION_LOCKS_DIR) )
-		logit "there are ${#STATION_LOCK_FILES[@]} station locks"
+		count=$(ls -C1 --ignore='?????*' $STATION_LOCKS_DIR | wc -l)
+		logit "there are $count station locks"
+		rm $STATION_LOCKS_DIR/*
+		rm $LOCKS_DIR/Users/*
+		exit 0
 		;;
 	-s|--station)
 		shift
