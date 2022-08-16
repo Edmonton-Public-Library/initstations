@@ -62,7 +62,7 @@ ADMIN_FILE=$CONFIG_DIR/admin
 LOCKS_DIR=~/Unicorn/Locks
 STATION_LOCKS_DIR=$LOCKS_DIR/Stations
 WORKING_DIR=/software/EDPL/Unicorn/EPLwork/Initstations
-VERSION="1.01.00"
+VERSION="1.01.01"
 APP=$(basename -s .sh $0)
 DEBUG=false
 LOG=$WORKING_DIR/$APP.log
@@ -198,6 +198,7 @@ init_station()
 		# Clean up.
 		rm -f $mserver_file 2>/dev/null
 		rm -f $STATION_LOCKS_DIR/$station_pid 2>/dev/null
+		# TODO: find and remove user locks.
 	else
 		logit "No lock file found for '$station_name'"
 	fi
@@ -249,8 +250,8 @@ do
 		# Ignore files that have names longer than 4 characters. They may be someone else's.
 		count=$(ls -C1 --ignore='?????*' $STATION_LOCKS_DIR | wc -l)
 		logit "there are $count station locks"
-		rm $STATION_LOCKS_DIR/*
 		rm $LOCKS_DIR/Users/*
+		rm $STATION_LOCKS_DIR/*
 		exit 0
 		;;
 	-s|--station)
