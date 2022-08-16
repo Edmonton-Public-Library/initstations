@@ -299,8 +299,8 @@ if [ "$SHOW_LOCKED_STATIONS" == true ]; then
 	done
 fi
 (( ${#STATION_LOCK_FILES[@]} > 0 )) || { logit "nothing to do."; exit 0; }
-for station_id in ${STATION_LOCK_FILES[@]}
-do
+for station_id in ${STATION_LOCK_FILES[@]}; do
 	init_station $station_id
 done
-rm $LOCKS_DIR/Users/*
+# TODO: change to clear the correct user locks
+# rm $LOCKS_DIR/Users/* 2>/dev/null
