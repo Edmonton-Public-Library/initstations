@@ -51,18 +51,92 @@
 #             4. Find the workstation policy in the list, e.g., MAINCIRC, and initialize it.
 #
 #             Users should now be able to use the named workstation.
+#
+# Notes: 
+# Station locks are simply a file that contains '1' and is named after the station ID number.
+# For example, station ILS002 has an ID number of 1806 in Config/admin.
+# sirsi@edpl:~/Unicorn/Locks$ cat Stations/2307
+#    1
+# sirsi@edpl:~/Unicorn/Locks$ cat Stations/2307 | od -xa
+# 0000000    2020    2020    0a31
+#          sp  sp  sp  sp   1  nl
+#
+# Lock locks are dot files '.' of the user login name, and the station ID number and contain the process ID
+# Here is how they are listed:
+#       UserLogin.StationID (from Stations/*)
+# ls -a .HIGCIRC.2584  .MEACIRC.2423  .MBENNET.2907 .SIPCHK.2885 .SMTCHT.2830
+#       .HIGCIRC.2590  .MEACIRC.2424  .SIPCHK.17    .SIPCHK.2887 .SMTCHT.2831
+#       .HIGCIRC.2591  .MEACIRC.2425  .SIPCHK.22    .SIPCHK.2888 .SMTCHT.2832
+#       .HIGCIRC.2592  .MEACIRC.2426  ... etc.
+#
+# sirsi@edpl:~/Unicorn/Locks/Users$ cat ../.MBENNETT.2907
+# 60944
+# sirsi@edpl:~/Unicorn/Locks/Users$ ps aux | grep 60944 | grep mserver
+# sirsi     60944  0.0  0.0 273396 16716 ?        S    08:15   0:00 mserver 4 198.161.203.39
+# sirsi@edpl:~/Unicorn/Locks/Users$ grep 2907 ~/Unicorn/Config/admin
+# 
+# Some stations are logged in and have station locks, but are not found in ~/Unicorn/Config/admin
+# 
+#
+# User locks are:
+# User ID                 How Many Logged In
+# -------                 ------------------
+# ABBCIRC                     4
+# ADMIN                       2
+# CALCIRC                     5
+# CLVCIRC                     3
+# CPLCIRC                     3
+# CSDCIRC                     5
+# HIGCIRC                     6 
+# lock file name uses the "encoded user key", which can be looked up by "seluser -iJ", e.g.,
+# echo b26 | seluser  -iJ -oBUD
+# ABBCIRC|126|EPLABB CIRC User|
+# They look like: -rw-r--r-- 1 sirsi staff 6 Aug 18 10:51 f51609
+# Essentially, the first character is based on the first digit where b is 1, c is 2, d is 3...... j is 9,
+# then all the other digits are just the same value. For example, b26 would be for user key 126 or f728
+# would be for user key 5728
+#
+# There seems to be 2 ways to update the User keys, 
+# 1) decrement the value and overwrite the file.
+# 2) audit the running processes and determine which locks can be deleted.
+# sudo-code:
+# func decr(string):
+#    local loginId = $1
+#    local whichUserLock = $(echo loginId | seluser -iB -oJ)
+#    Users/whichUserLock--
+#    if Users/whichUserLock < 1:
+#        rm Users/whichUserLock
+#    return
+# func clean_station(string):
+#    local stationId = $1
+#    local userId = LOGINNAME
+#    rm Locks/.LOGINNAME.stationId
+#    rm Stations/stationId
+#    decr(LOGINNAME)
+# for each station_lock in Stations/*:
+#    process = cat Locks/.LOGINNAME.station_lock
+#    if process exists:
+#        if kill process:
+#            clean_station(station_lock)
+#        else:
+#            show warning.
+#            continue
+#    else:
+#         clean_station(station_lock)
+# end
+#
 # Author:     Andrew Nisbet
 # Date:       December 30, 2013
 # Rev date:   August 11, 2022
 #
 ############################################################################################
 
+VERSION="1.02.05_DEV"
 CONFIG_DIR=`getpathname config`
 ADMIN_FILE=$CONFIG_DIR/admin
 LOCKS_DIR=~/Unicorn/Locks
 STATION_LOCKS_DIR=$LOCKS_DIR/Stations
 WORKING_DIR=/software/EDPL/Unicorn/EPLwork/Initstations
-VERSION="1.01.01"
 APP=$(basename -s .sh $0)
 DEBUG=false
 LOG=$WORKING_DIR/$APP.log
@@ -72,6 +146,7 @@ SHOW_VARS=false
 SHOW_LOCKED_STATIONS=false
 TRUE=0
 FALSE=1
+FORCE=false
 ###############################################################################
 # Display usage message.
 # param:  none
@@ -82,6 +157,7 @@ usage()
 Usage: $APP [-option]
  
  -d, --debug turn on debug logging and preserves temp files.
+ -f, --force Kill any existing station processes if running.
  -h, --help: display usage message and exit.
  -l, --log_file={/foo/bar.log}: Log transactions to an additional log, like the caller's log file.
      After this is set, all additional messages from $APP will ALSO be written to \$CALLER_LOG which
@@ -125,80 +201,93 @@ logerr()
 # Display the variables that are set.
 show_vars()
 {
+	logit "\$APP=$APP"
 	logit "\$CONFIG_DIR=$CONFIG_DIR"
+	logit "\$ADMIN_FILE=$ADMIN_FILE"
+	logit "\$LOCKS_DIR=$LOCKS_DIR"
 	logit "\$STATION_LOCKS_DIR=$STATION_LOCKS_DIR"
 	logit "\$WORKING_DIR=$WORKING_DIR"
 	logit "\$VERSION=$VERSION"
-	logit "\$APP=$APP"
 	logit "\$DEBUG=$DEBUG"
 	logit "\$LOG=$LOG"
 	logit "\$CALLER_LOG=$CALLER_LOG"
+	logit "\$SHOW_LOCKED_STATIONS=$SHOW_LOCKED_STATIONS"
+	logit "\$STATION_LOCK_FILES[]=${STATION_LOCK_FILES[@]}"
+	logit "\$FORCE=$FORCE"
 }
 
-# Asks if user would like to do what the message says.
-# param:  message string.
-# return: 0 if the answer was yes and 1 otherwise.
-confirm()
+# Takes the users login name and decrements the number of logged in users in the file.
+# param: user login name like MBENNETT or CMACIRC.
+_decr_user_lock()
 {
-	if [ -z "$1" ]; then
-		echo "** error, confirm_yes requires a message." >&2
-		exit $FALSE
+	local user_id=$1
+	# Find the user's 'encoded' ID
+	local user_lock_file_name=$(echo $user_id | seluser -iB -oJ 2>/dev/null | pipe.pl -oc0)
+	# echo "   16" >test
+	# ilsdev@ilsdev1:~/projects/initstation$ cat test | pipe.pl -3c0:-1 -pc0:5.\\s >tmp
+	# ilsdev@ilsdev1:~/projects/initstation$ mv tmp test
+	# ilsdev@ilsdev1:~/projects/initstation$ cat test
+	#    15
+	# ilsdev@ilsdev1:~/projects/initstation$ cat test | od -ax
+	# 0000000  sp  sp  sp   1   5  nl
+	# 		2020    3120    0a35
+	local user_lock_file=$LOCKS_DIR/Users/$user_lock_file_name
+	if [ -f "$user_lock_file" ]; then
+		tmp=$WORKING_DIR/tmp.$$
+		cat $user_lock_file | pipe.pl -3c0:-1 -pc0:5.\\s >$tmp
+		local user_count=$(cat $tmp | pipe.pl -tc0)
+		[ "$DEBUG" == true ] && logit "user count for user lock file now: $user_count"
+		if (( $user_count < 1 )); then
+			[ "$DEBUG" == true ] && logit "removing the user lock $user_lock_file"
+			rm $tmp $user_lock_file
+		else
+			[ "$DEBUG" == true ] && logit "updating the user lock $user_lock_file"
+			mv $tmp $user_lock_file
+		fi
+	else
+		logit "$user_id doesn't have a User lock"
 	fi
-	local message="$1"
-	read -p "$message? y/[n]: " answer < /dev/tty
-	case "$answer" in
-		[yY])
-			echo "yes selected." >&2
-			echo $TRUE
-			;;
-		*)
-			echo "no selected." >&2
-			echo $FALSE
-			;;
-	esac
 }
 
 # Inits a station by a given name provided as a parameter.
-# param:  station id as read from field 2 of Config/admin file.
+# param:  station id as read from the file name of the station lock.
+#         Looks like: 1806 for station 1806 (ILS002)
 init_station()
 {
 	local station_id_file=$1
 	# Find the station name from the admin file.
 	local station_name=`grep $station_id_file $ADMIN_FILE | cut -d\| -f3 2>/dev/null`
-	if [[ ! "$station_name" ]]; then
-		logit "*warn: no '$station_name' listed in '$ADMIN_FILE'."
-		# Doesn't mean we can't try to remove any lock any way.
-	fi
 	# Check for the lock in the lock directory.
 	if [[ -e "$STATION_LOCKS_DIR/$station_id_file" ]]; then
 		# Find the process id (2207) from a matching file in ~/Unicorn/Locks directory, like .CMATMP.2207
 		local mserver_file=$(ls -a -C1 $LOCKS_DIR | grep $station_id_file 2>/dev/null)
-		[ -z "$mserver_file" ] && { logit "couldn't find the process id file for $station_name"; return; }
+		if [ -z "$mserver_file" ]; then
+			logit "couldn't find the process id file for $station_name, but cleaning up the station lock."
+			rm $STATION_LOCKS_DIR/$station_id_file
+			# Nothing else to do since we aren't sure if the User locks contains a count for a process that doesn't exist.
+			return
+		fi
 		local which_user=$(echo $mserver_file | pipe.pl -W'\.' -oc1)
 		mserver_file=$LOCKS_DIR/$mserver_file
 		# The process ID can be found in that file.
 		local process_id=$(cat $mserver_file)
-		[ -z "$process_id" ] && { logit "couldn't find the process id in $mserver_file"; return; }
-		local running_process=$(ps aux | pipe.pl -W'\s+' -oc1 | grep "$process_id" 2>/dev/null)
-		if [ -z "$running_process" ]; then
-			logit "$which_user on ${station_name}'s mserver is not running."
-			# on to clean up.
-		else
-			logit "$which_user on ${station_name}'s mserver session is still running!"
-			local answer=$(confirm "kill the process ")
-			if [ "$answer" == "$TRUE" ]; then
-				logit "killing process $running_process"
-				kill "$running_process"
-			else
-				logit "not touching $running_process"
-				# and exit before anthing else gets done.
-				return
-			fi
+		if [ -z "$process_id" ]; then
+			logit "couldn't find the process id in $mserver_file so cleaning up the file."
+			[ "$DEBUG" == true ] && logit "removing $mserver_file"
+			rm -f $mserver_file
+			[ "$DEBUG" == true ] && logit "removing $STATION_LOCKS_DIR/$station_pid"
+			rm $STATION_LOCKS_DIR/$station_pid 2>/dev/null
+			return
 		fi
+		[ "$DEBUG" == true ] && logit "killing $process_id"
+		kill $process_id
 		# Clean up.
+		[ "$DEBUG" == true ] && logit "removing $mserver_file"
 		rm -f $mserver_file 2>/dev/null
-		rm -f $STATION_LOCKS_DIR/$station_pid 2>/dev/null
-		# TODO: find and remove user locks.
+		[ "$DEBUG" == true ] && logit "removing $STATION_LOCKS_DIR/$station_pid"
+		rm $STATION_LOCKS_DIR/$station_pid 2>/dev/null
+		# Decrement user count in Users/lock file.
+		_decr_user_lock $which_user
 	else
 		logit "No lock file found for '$station_name'"
 	fi
@@ -210,7 +299,7 @@ init_station()
 # -l is for long options with double dash like --version
 # the comma separates different long options
 # -a is for long options with single dash like -version
-options=$(getopt -l "debug,help,log:,List,remove_all_locks,station:,VARS,version,xhelp" -o "dhl:Lrs:Vvx" -a -- "$@")
+options=$(getopt -l "debug,force,help,log:,List,remove_all_locks,station:,VARS,version,xhelp" -o "dfhl:Lrs:Vvx" -a -- "$@")
 if [ $? != 0 ] ; then logit "Failed to parse options...exiting." >&2 ; exit 1 ; fi
 # set --:
 # If no arguments follow this option, then the positional parameters are unset. Otherwise, the positional parameters
@@ -223,7 +312,11 @@ do
         logit "turning on debugging"
 		DEBUG=true
 		;;
-    -h|--help)
+    -f|--force)
+		[ "$DEBUG" == true ] && logit "forcing removal of locks"
+        FORCE=true
+        ;;
+	-h|--help)
         usage
         ;;
     -l|--log_file)
@@ -249,10 +342,8 @@ do
 		[ "$DEBUG" == true ] && logit "request to remove all un-used locks."
 		# Ignore files that have names longer than 4 characters. They may be someone else's.
 		count=$(ls -C1 --ignore='?????*' $STATION_LOCKS_DIR | wc -l)
+		STATION_LOCK_FILES=$(ls -C1 --ignore='?????*' $STATION_LOCKS_DIR)
 		logit "there are $count station locks"
-		rm $LOCKS_DIR/Users/*
-		rm $STATION_LOCKS_DIR/*
-		exit 0
 		;;
 	-s|--station)
 		shift
@@ -293,7 +384,7 @@ logit "== starting $APP version: $VERSION"
 [ -s "$ADMIN_FILE" ] || { logerr "can't find the configuration file in '$ADMIN_FILE'"; exit 1; }
 [ "$SHOW_VARS" == true ] && show_vars
 if [ "$SHOW_LOCKED_STATIONS" == true ]; then
-	logit "the ILS thinks the following stations are connected:"
+	logit "the following station locks are lingering:"
 	for some_pid in $(ls -C1 --ignore='?????*' $STATION_LOCKS_DIR); do
 		grep $some_pid $ADMIN_FILE | cut -d\| -f3 2>/dev/null
 	done
@@ -302,5 +393,4 @@ fi
 for station_id in ${STATION_LOCK_FILES[@]}; do
 	init_station $station_id
 done
-# TODO: change to clear the correct user locks
-# rm $LOCKS_DIR/Users/* 2>/dev/null
+# EOF

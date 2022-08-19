@@ -32,11 +32,8 @@ USER=sirsi
 REMOTE=~/Unicorn/Bincustom/
 LOCAL=~/projects/initstation/
 APP=initstation.sh
-ARGS=
-
 test:
 	scp ${LOCAL}${APP} ${USER}@${TEST_SERVER}:${REMOTE}
-	ssh ${USER}@${TEST_SERVER} '${REMOTE}${APP} ${ARGS}'
 production:
 	scp ${LOCAL}${APP} ${USER}@${PRODUCTION_SERVER}:${REMOTE}
 
