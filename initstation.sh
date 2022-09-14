@@ -127,11 +127,11 @@
 #
 # Author:     Andrew Nisbet
 # Date:       December 30, 2013
-# Rev date:   August 11, 2022
+# Rev date:   September 14, 2022
 #
 ############################################################################################
 
-VERSION="1.02.05"
+VERSION="1.03.00"
 CONFIG_DIR=`getpathname config`
 ADMIN_FILE=$CONFIG_DIR/admin
 LOCKS_DIR=~/Unicorn/Locks
@@ -279,11 +279,16 @@ init_station()
 			rm $STATION_LOCKS_DIR/$station_pid 2>/dev/null
 			return
 		fi
-		[ "$DEBUG" == true ] && logit "killing $process_id"
-		kill $process_id
+		# If there was a process running, kill it only if --force 
+		# is used. Without it the mserver file will remain with the process
+		# running but the rest of the files will be cleaned up.
+		if [ "$FORCE" == true ]; then
+			[ "$DEBUG" == true ] && logit "killing $process_id"
+			kill $process_id
+			[ "$DEBUG" == true ] && logit "removing $mserver_file"
+			rm -f $mserver_file 2>/dev/null
+		fi
 		# Clean up.
-		[ "$DEBUG" == true ] && logit "removing $mserver_file"
-		rm -f $mserver_file 2>/dev/null
 		[ "$DEBUG" == true ] && logit "removing $STATION_LOCKS_DIR/$station_pid"
 		rm $STATION_LOCKS_DIR/$station_pid 2>/dev/null
 		# Decrement user count in Users/lock file.
