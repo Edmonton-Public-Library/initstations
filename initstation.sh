@@ -131,7 +131,7 @@
 #
 ############################################################################################
 
-VERSION="1.02.05_DEV"
+VERSION="1.02.05"
 CONFIG_DIR=`getpathname config`
 ADMIN_FILE=$CONFIG_DIR/admin
 LOCKS_DIR=~/Unicorn/Locks
