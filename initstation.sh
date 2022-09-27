@@ -131,7 +131,7 @@
 #
 ############################################################################################
 
-VERSION="1.03.01"
+VERSION="1.03.02"
 CONFIG_DIR=`getpathname config`
 ADMIN_FILE=$CONFIG_DIR/admin
 LOCKS_DIR=~/Unicorn/Locks
@@ -272,12 +272,13 @@ init_station()
 	local station_name=`grep $station_id $ADMIN_FILE | cut -d\| -f3 2>/dev/null`
 	# The mserver lock looks like '.MBEVANS.1744'
 	local mserver_lock=$(ls -a -C1 $LOCKS_DIR | grep $station_id 2>/dev/null)
+	[ -z "$mserver_lock" ] && { logit "$station_name has not locks"; return; }
 	# Which user should have 'MBEVANS'
 	local which_user=$(echo $mserver_lock | pipe.pl -W'\.' -oc1)
 	# Looks like: '~/Unicorn/Locks/.MBEVANS.1744'
 	mserver_file=$LOCKS_DIR/$mserver_lock
 	# Finding the mserver file means we have a running process which we will OPTIONALLY kill as well.
-	if [ -e "$mserver_file" ]; then
+	if [ -f "$mserver_file" ]; then
 		# The process ID can be found in that file.
 		# Like: '9305'
 		local process_id=$(cat $mserver_file)
