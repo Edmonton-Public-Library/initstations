@@ -131,7 +131,7 @@
 #
 ############################################################################################
 
-VERSION="1.03.00"
+VERSION="1.03.02"
 CONFIG_DIR=`getpathname config`
 ADMIN_FILE=$CONFIG_DIR/admin
 LOCKS_DIR=~/Unicorn/Locks
@@ -147,6 +147,7 @@ SHOW_LOCKED_STATIONS=false
 TRUE=0
 FALSE=1
 FORCE=false
+RM_ALL=false
 ###############################################################################
 # Display usage message.
 # param:  none
@@ -216,12 +217,17 @@ show_vars()
 	logit "\$FORCE=$FORCE"
 }
 
-# Takes the users login name and decrements the number of logged in users in the file.
+# This takes care of User Locks. Takes the users login name and decrements 
+# the number of logged in users in the file. If the user lock file is 
+# empty or zero, remove it. 
 # param: user login name like MBENNETT or CMACIRC.
 _decr_user_lock()
 {
+	# $1 looks like 'MBEVANS'
 	local user_id=$1
 	# Find the user's 'encoded' ID
+	# Which seluser prints as 'b267961|'
+	# Look in the file cat 'Users/b267961' and find how many users with that simplified ID are logged in.
 	local user_lock_file_name=$(echo $user_id | seluser -iB -oJ 2>/dev/null | pipe.pl -oc0)
 	# echo "   16" >test
 	# ilsdev@ilsdev1:~/projects/initstation$ cat test | pipe.pl -3c0:-1 -pc0:5.\\s >tmp
@@ -233,19 +239,24 @@ _decr_user_lock()
 	# 		2020    3120    0a35
 	local user_lock_file=$LOCKS_DIR/Users/$user_lock_file_name
 	if [ -f "$user_lock_file" ]; then
+		if [ "$RM_ALL" == true ]; then
+			rm $user_lock_file
+			return
+		fi
+		# Do the math in a scratch file.
 		tmp=$WORKING_DIR/tmp.$$
 		cat $user_lock_file | pipe.pl -3c0:-1 -pc0:5.\\s >$tmp
 		local user_count=$(cat $tmp | pipe.pl -tc0)
 		[ "$DEBUG" == true ] && logit "user count for user lock file now: $user_count"
 		if (( $user_count < 1 )); then
 			[ "$DEBUG" == true ] && logit "removing the user lock $user_lock_file"
+			# both '0' so remove them
 			rm $tmp $user_lock_file
 		else
 			[ "$DEBUG" == true ] && logit "updating the user lock $user_lock_file"
+			# There is still someone with the simplified ID using a station.
 			mv $tmp $user_lock_file
 		fi
-	else
-		logit "$user_id doesn't have a User lock"
 	fi
 }
 
@@ -254,48 +265,37 @@ _decr_user_lock()
 #         Looks like: 1806 for station 1806 (ILS002)
 init_station()
 {
-	local station_id_file=$1
+	# Like '1744'
+	local station_id=$1
 	# Find the station name from the admin file.
-	local station_name=`grep $station_id_file $ADMIN_FILE | cut -d\| -f3 2>/dev/null`
-	# Check for the lock in the lock directory.
-	if [[ -e "$STATION_LOCKS_DIR/$station_id_file" ]]; then
-		# Find the process id (2207) from a matching file in ~/Unicorn/Locks directory, like .CMATMP.2207
-		local mserver_file=$(ls -a -C1 $LOCKS_DIR | grep $station_id_file 2>/dev/null)
-		if [ -z "$mserver_file" ]; then
-			logit "couldn't find the process id file for $station_name, but cleaning up the station lock."
-			rm $STATION_LOCKS_DIR/$station_id_file
-			# Nothing else to do since we aren't sure if the User locks contains a count for a process that doesn't exist.
-			return
-		fi
-		local which_user=$(echo $mserver_file | pipe.pl -W'\.' -oc1)
-		mserver_file=$LOCKS_DIR/$mserver_file
+	# 'STAT|1744|EPLCMA003|wsgui|Stanley A. Milner Workstation|1|1|2|17|96||0|2|0|'
+	local station_name=`grep $station_id $ADMIN_FILE | cut -d\| -f3 2>/dev/null`
+	# The mserver lock looks like '.MBEVANS.1744'
+	local mserver_lock=$(ls -a -C1 $LOCKS_DIR | grep $station_id 2>/dev/null)
+	[ -z "$mserver_lock" ] && { logit "$station_name has not locks"; return; }
+	# Which user should have 'MBEVANS'
+	local which_user=$(echo $mserver_lock | pipe.pl -W'\.' -oc1)
+	# Looks like: '~/Unicorn/Locks/.MBEVANS.1744'
+	mserver_file=$LOCKS_DIR/$mserver_lock
+	# Finding the mserver file means we have a running process which we will OPTIONALLY kill as well.
+	if [ -f "$mserver_file" ]; then
 		# The process ID can be found in that file.
+		# Like: '9305'
 		local process_id=$(cat $mserver_file)
-		if [ -z "$process_id" ]; then
-			logit "couldn't find the process id in $mserver_file so cleaning up the file."
-			[ "$DEBUG" == true ] && logit "removing $mserver_file"
-			rm -f $mserver_file
-			[ "$DEBUG" == true ] && logit "removing $STATION_LOCKS_DIR/$station_pid"
-			rm $STATION_LOCKS_DIR/$station_pid 2>/dev/null
-			return
-		fi
 		# If there was a process running, kill it only if --force 
 		# is used. Without it the mserver file will remain with the process
 		# running but the rest of the files will be cleaned up.
 		if [ "$FORCE" == true ]; then
-			[ "$DEBUG" == true ] && logit "killing $process_id"
+			[ "$DEBUG" == true ] && logit "killing ${which_user}'s mserver"
 			kill $process_id
 			[ "$DEBUG" == true ] && logit "removing $mserver_file"
 			rm -f $mserver_file 2>/dev/null
 		fi
-		# Clean up.
-		[ "$DEBUG" == true ] && logit "removing $STATION_LOCKS_DIR/$station_pid"
-		rm $STATION_LOCKS_DIR/$station_pid 2>/dev/null
-		# Decrement user count in Users/lock file.
-		_decr_user_lock $which_user
-	else
-		logit "No lock file found for '$station_name'"
 	fi
+	logit "removing $STATION_LOCKS_DIR/$station_id"
+	rm $STATION_LOCKS_DIR/$station_id 2>/dev/null
+	# Decrement or remove the user Users/lock files.
+	_decr_user_lock $which_user
 }
 
 ### Check input parameters.
@@ -345,6 +345,7 @@ do
 		;;
 	-r|--remove_all_locks)
 		[ "$DEBUG" == true ] && logit "request to remove all un-used locks."
+		RM_ALL=true
 		# Ignore files that have names longer than 4 characters. They may be someone else's.
 		count=$(ls -C1 --ignore='?????*' $STATION_LOCKS_DIR | wc -l)
 		STATION_LOCK_FILES=$(ls -C1 --ignore='?????*' $STATION_LOCKS_DIR)
@@ -385,7 +386,6 @@ do
     shift
 done
 logit "== starting $APP version: $VERSION"
-# : ${INPUT_FILE:?Missing -i,--input}
 [ -s "$ADMIN_FILE" ] || { logerr "can't find the configuration file in '$ADMIN_FILE'"; exit 1; }
 [ "$SHOW_VARS" == true ] && show_vars
 if [ "$SHOW_LOCKED_STATIONS" == true ]; then
