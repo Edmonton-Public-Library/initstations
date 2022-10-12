@@ -131,10 +131,10 @@
 #
 ############################################################################################
 
-VERSION="1.03.02"
+VERSION="1.04.00"
 CONFIG_DIR=`getpathname config`
 ADMIN_FILE=$CONFIG_DIR/admin
-LOCKS_DIR=~/Unicorn/Locks
+LOCKS_DIR=/software/EDPL/Unicorn/Locks
 STATION_LOCKS_DIR=$LOCKS_DIR/Stations
 WORKING_DIR=/software/EDPL/Unicorn/EPLwork/Initstations
 APP=$(basename -s .sh $0)
@@ -272,7 +272,7 @@ init_station()
 	local station_name=`grep $station_id $ADMIN_FILE | cut -d\| -f3 2>/dev/null`
 	# The mserver lock looks like '.MBEVANS.1744'
 	local mserver_lock=$(ls -a -C1 $LOCKS_DIR | grep $station_id 2>/dev/null)
-	[ -z "$mserver_lock" ] && { logit "$station_name has not locks"; return; }
+	[ -z "$mserver_lock" ] && { logit "$station_name has no locks"; return; }
 	# Which user should have 'MBEVANS'
 	local which_user=$(echo $mserver_lock | pipe.pl -W'\.' -oc1)
 	# Looks like: '~/Unicorn/Locks/.MBEVANS.1744'
@@ -344,7 +344,7 @@ do
 		SHOW_LOCKED_STATIONS=true
 		;;
 	-r|--remove_all_locks)
-		[ "$DEBUG" == true ] && logit "request to remove all un-used locks."
+		[ "$DEBUG" == true ] && logit "request to remove all station and user locks."
 		RM_ALL=true
 		# Ignore files that have names longer than 4 characters. They may be someone else's.
 		count=$(ls -C1 --ignore='?????*' $STATION_LOCKS_DIR | wc -l)
@@ -396,6 +396,18 @@ if [ "$SHOW_LOCKED_STATIONS" == true ]; then
 fi
 (( ${#STATION_LOCK_FILES[@]} > 0 )) || { logit "nothing to do."; exit 0; }
 for station_id in ${STATION_LOCK_FILES[@]}; do
-	init_station $station_id
+	if [ "$RM_ALL" == true ]; then
+		logit "removing lock for $station_id"
+		rm $LOCKS_DIR/Stations/$station_id 2>/dev/null
+	else
+		init_station $station_id
+	fi
 done
+if [ "$RM_ALL" == true ]; then
+	for user_file in $(ls -C1 --ignore='?????*' $LOCKS_DIR/Users); do
+		user_count=$(cat < $LOCKS_DIR/Users/$user_file | pipe.pl -tc0)
+		logit "removing locks for $user_count users"
+		rm $LOCKS_DIR/Users/$user_file 2>/dev/null
+	done
+fi
 # EOF
