@@ -144,8 +144,6 @@ CALLER_LOG="/dev/null"
 STATION_LOCK_FILES=()
 SHOW_VARS=false
 SHOW_LOCKED_STATIONS=false
-TRUE=0
-FALSE=1
 FORCE=false
 RM_ALL=false
 ###############################################################################
